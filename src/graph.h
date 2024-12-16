@@ -23,142 +23,177 @@
 #include <string>
 #include <vector>
 
+#include "definitions.h"
 #include "util.h"
 
 namespace ProMapAnalyzer {
     struct Edge {
-        int v;
-        int weight;
+        u64 v;
+        u64 weight;
+
+        Edge() = default;
+        Edge(const u64 v, const u64 w) : v(v), weight(w) {}
     };
 
     class Graph {
-        int n = 0;
-        int m = 0;
+        u64 n = 0;
+        u64 m = 0;
 
-        std::vector<int> v_weights;
-        std::vector<std::vector<Edge>> adj;
+        u64 vertex_weights = 0;
+        u64 edge_weights   = 0;
+
+        std::vector<u64> v_weights;
+        std::vector<size_t> neighborhoods;
+        std::vector<Edge> edges;
+        size_t curr_m = 0;
 
     public:
-        Graph() = default;
-
-        explicit Graph(const int n_vertices) {
-            n = n_vertices;
-            v_weights.resize(n_vertices, 1);
-            adj.resize(n_vertices);
-        }
-
         explicit Graph(const std::string& path) {
-            if (!file_exists(path)) {
-                std::cerr << "File " << path << " does not exist!" << std::endl;
-                std::abort();
+            std::ifstream file(path, std::ios::ate); // Open file in "at end" mode to get size
+            size_t file_size = file.tellg(); // Get file size
+            file.seekg(0); // Rewind to the beginning
+
+            std::string content(file_size, '\0');
+            file.read(&content[0], file_size);
+
+            const char* ptr = content.data();
+            const char* end = ptr + content.size();
+
+            bool has_v_weights = false;
+            bool has_e_weights = false;
+
+            // Parse header
+            while (*ptr == '%') {
+                ptr = std::find(ptr, end, '\n') + 1; // Skip comment lines
             }
 
-            std::ifstream file(path);
-            if (file.is_open()) {
-                std::string line;
-                bool has_v_weights = false;
-                bool has_e_weights = false;
+            // Parse and clean the first non-comment line
+            while (*ptr == ' ') ++ptr; // Skip leading spaces
+            const char* line_end = std::find(ptr, end, '\n'); // Find the end of the line
 
-                while (std::getline(file, line)) {
-                    if (line[0] == '%') { continue; }
+            // Parse the header
+            std::string header(ptr, line_end);
+            ptr = line_end + 1; // Move pointer past the header line
 
-                    // remove leading and trailing whitespaces, replace double whitespaces
-                    line.erase(0, line.find_first_not_of(' ')).erase(line.find_last_not_of(' ') + 1);
-                    line = std::regex_replace(line, std::regex("\\s{2,}"), " ");
+            size_t space_pos1 = header.find(' ');
+            size_t space_pos2 = header.find(' ', space_pos1 + 1);
 
-                    // read in header
-                    std::vector<std::string> header = split(line, ' ');
-                    n                               = std::stoi(header[0]);
-                    m                               = 0;
+            n = std::stoi(header.substr(0, space_pos1));
+            m = std::stoi(header.substr(space_pos1 + 1, space_pos2 - space_pos1 - 1)) * 2;
 
-                    adj.resize(n);
-                    v_weights.resize(n, 1);
+            std::string fmt = (space_pos2 != std::string::npos) ? header.substr(space_pos2 + 1) : "000";
+            has_v_weights   = fmt[1] == '1';
+            has_e_weights   = fmt[2] == '1';
 
-                    std::string fmt = "000";
-                    if (header.size() == 3 && header[2].size() == 3) {
-                        fmt = header[2];
-                    }
+            v_weights.resize(n, 1);
+            vertex_weights = n;
+            neighborhoods.resize(n + 1, 0);
+            neighborhoods[0] = 0;
+            edges.resize(m);
+            curr_m = 0;
 
-                    has_v_weights = fmt[1] == '1';
-                    has_e_weights = fmt[2] == '1';
-
-                    break;
+            // Parse edges
+            u64 u = 0;
+            while (ptr < end) {
+                while (*ptr == '%') {
+                    ptr = std::find(ptr, end, '\n') + 1; // Skip comment lines
                 }
 
-                // read in edges
-                std::vector<int> ints;
-                int u = 0;
-                while (std::getline(file, line)) {
-                    if (line[0] == '%') { continue; }
+                const char* line_start = ptr;
+                line_end               = std::find(ptr, end, '\n');
+                ptr                    = line_end + 1;
 
-                    line_to_ints(line, ints);
-                    int i = 0;
+                u64 curr_number = 0;
+                u64 v           = 0;
+                bool active     = false;
+                bool vertex_set = false;
 
-                    if (has_v_weights) { set_v_weight(u, ints[i++]); }
+                const char* it = line_start;
+                if (has_v_weights) {
+                    for (; it < line_end; ++it) {
+                        char c = *it;
+                        if (c == ' ' && active) {
+                            v_weights[u] = curr_number;
+                            vertex_weights += curr_number - 1;
+                            curr_number = 0;
+                            active      = false;
+                            ++it;
+                            break;
+                        }
+                        curr_number = curr_number * 10 + (c - '0');
+                        active      = true;
+                    }
+                }
 
-                    while (i < static_cast<int>(ints.size())) {
-                        int v      = ints[i++] - 1;
-                        int weight = has_e_weights ? ints[i++] : 1;
-                        if (u < v) {
-                            add_edge(u, v, weight);
+                if (has_e_weights) {
+                    for (; it < line_end; ++it) {
+                        char c = *it;
+                        if (c == ' ') {
+                            if (active) {
+                                if (!vertex_set) {
+                                    v          = curr_number - 1;
+                                    vertex_set = true;
+                                } else {
+                                    edges[curr_m].v        = v;
+                                    edges[curr_m++].weight = curr_number;
+                                    edge_weights += curr_number;
+                                }
+                            }
+                            curr_number = 0;
+                            active      = false;
+                        } else {
+                            curr_number = curr_number * 10 + (c - '0');
+                            active      = true;
                         }
                     }
-                    u += 1;
+                } else {
+                    for (; it < line_end; ++it) {
+                        char c = *it;
+                        if (c == ' ') {
+                            if (active) {
+                                edges[curr_m].v        = curr_number - 1;
+                                edges[curr_m++].weight = 1;
+                                edge_weights += 1;
+                            }
+                            curr_number = 0;
+                            active      = false;
+                        } else {
+                            curr_number = curr_number * 10 + (c - '0');
+                            active      = true;
+                        }
+                    }
                 }
-            }
-        }
 
-        int get_n() const {
-            return n;
-        }
-
-        int get_m() const {
-            return m;
-        }
-
-        std::vector<Edge>& operator[](const int u) {
-            return adj[u];
-        }
-
-        const std::vector<Edge>& operator[](const int u) const {
-            return adj[u];
-        }
-
-        void set_v_weight(const int v, const int weight = 1) {
-            v_weights[v] = weight;
-        }
-
-        int get_v_weight(const int v) const {
-            return v_weights[v];
-        }
-
-        int get_g_weight() const {
-            return sum<int>(v_weights);
-        }
-
-        void add_edge(int u, int v, const int weight = 1) {
-            if (u > v) std::swap(u, v);
-
-            adj[u].push_back({v, weight});
-            m += 1;
-        }
-
-        bool edge_exists(int u, int v) {
-            if (u > v) std::swap(u, v);
-            return std::any_of(adj[u].begin(), adj[u].end(), [&](const Edge& e) { return e.v == v; });
-        }
-
-        int get_edge_weight(const int u, const int v) {
-            int min = std::min(u, v);
-            int max = std::max(u, v);
-
-            for (auto& [vv, weight] : adj[min]) {
-                if (vv == max) {
-                    return weight;
+                // Handle the last number on the line
+                if (active) {
+                    if (!has_e_weights) {
+                        edges[curr_m].v        = curr_number - 1;
+                        edges[curr_m++].weight = 1;
+                        edge_weights += 1;
+                    } else {
+                        edges[curr_m].v        = v;
+                        edges[curr_m++].weight = curr_number;
+                        edge_weights += curr_number;
+                    }
                 }
+
+                neighborhoods[u + 1] = curr_m;
+                u += 1;
             }
-            abort();
+
+            edge_weights /= 2;
         }
+
+        u64 get_n() const { return n; }
+        u64 get_m() const { return m / 2; }
+        u64 get_v_weight(const u64 v) const { return v_weights[v]; }
+        u64 get_vertex_weights() const { return vertex_weights; }
+        u64 get_edge_weights() const { return edge_weights; }
+
+        u64 get_start(const u64 u) const { return neighborhoods[u]; }
+        u64 get_end(const u64 u) const { return neighborhoods[u + 1]; }
+        Edge get_edge(const u64 idx) const { return edges[idx]; }
+        Edge& get_edge(const u64 idx) { return edges[idx]; }
     };
 }
 

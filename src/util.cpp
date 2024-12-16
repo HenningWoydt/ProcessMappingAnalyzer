@@ -14,13 +14,16 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 ==============================================================================*/
+#include "definitions.h"
 #include "util.h"
+
+#include <charconv>
 
 namespace ProMapAnalyzer {
     void line_to_ints(const std::string& line,
-                      std::vector<int>& ints) {
+                      std::vector<u64>& ints) {
         ints.clear();
-        int curr_number = 0;
+        u64 curr_number = 0;
         bool active     = false;
 
         for (const char c : line) {
@@ -62,23 +65,44 @@ namespace ProMapAnalyzer {
         return splits;
     }
 
-    std::vector<int> read_partition(const std::string& path) {
+    std::vector<u64> read_partition(const std::string& path, const size_t n) {
         if (!file_exists(path)) {
             std::cerr << "File " << path << " does not exist!" << std::endl;
             std::abort();
         }
 
-        std::vector<int> partition;
+        // Reserve space for the partition
+        std::vector<u64> partition;
+        partition.reserve(n);
 
-        std::ifstream file(path);
-        if (file.is_open()) {
-            std::string line;
-            while (std::getline(file, line)) {
-                if (line[0] == 'c') { continue; }
-                if (line.back() == '\n' || line.back() == '\r') { line.pop_back(); }
+        // Open the file and read its contents into a string
+        std::ifstream file(path, std::ios::ate); // open in "at end" mode to get file size
+        size_t file_size = file.tellg(); // get file size
+        file.seekg(0); // rewind to the beginning
 
-                partition.push_back(std::stoi(line));
+        std::string content(file_size, '\0');
+        file.read(&content[0], file_size);
+
+        // Parse the content
+        const char* ptr = content.data();
+        const char* end = ptr + content.size();
+
+        while (ptr < end) {
+            // Skip lines starting with 'c'
+            if (*ptr == 'c') {
+                ptr = std::find(ptr, end, '\n') + 1;
+                continue;
             }
+
+            // Parse the number
+            u64 value = 0;
+            ptr = std::from_chars(ptr, end, value).ptr;
+
+            // Add to the partition
+            partition.push_back(value);
+
+            // Move the pointer to the next line
+            ptr = std::find(ptr, end, '\n') + 1;
         }
 
         return partition;
@@ -88,10 +112,10 @@ namespace ProMapAnalyzer {
                                       std::string& distance,
                                       std::string& file_path) {
         std::vector<std::string> h_str = split(hierarchy, ':');
-        std::vector<long int> h             = convert<long int>(h_str);
+        std::vector<long int> h        = convert<long int>(h_str);
         std::reverse(h.begin(), h.end());
         std::vector<std::string> d_str = split(distance, ':');
-        std::vector<long int> d             = convert<long int>(d_str);
+        std::vector<long int> d        = convert<long int>(d_str);
 
         std::vector<std::vector<long int>> hierarchy_indices;
         for (long int x : h) {
@@ -152,8 +176,8 @@ namespace ProMapAnalyzer {
         }
 
         // write graph
-        long int n_edges     = 0;
-        std::string fmt = "001";
+        long int n_edges = 0;
+        std::string fmt  = "001";
         std::string content;
         for (long int i = 0; i < k; ++i) {
             std::string line;

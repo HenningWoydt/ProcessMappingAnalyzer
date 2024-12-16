@@ -27,7 +27,7 @@
 
 namespace ProMapAnalyzer {
     void line_to_ints(const std::string& line,
-                      std::vector<int>& ints);
+                      std::vector<u64>& ints);
 
     bool file_exists(const std::string& path);
 
@@ -108,7 +108,7 @@ namespace ProMapAnalyzer {
     std::vector<std::string> split(const std::string& str,
                                    char c);
 
-    std::vector<int> read_partition(const std::string& path);
+    std::vector<u64> read_partition(const std::string& path, size_t n);
 
     template <typename T>
     void printVectorOfVectors(const std::vector<std::vector<T>>& vecs) {
