@@ -73,15 +73,13 @@ namespace ProMapAnalyzer {
 
             // Parse the header
             std::string header(ptr, line_end);
+            std::vector<std::string> temp = split(header, ' ');
             ptr = line_end + 1; // Move pointer past the header line
 
-            size_t space_pos1 = header.find(' ');
-            size_t space_pos2 = header.find(' ', space_pos1 + 1);
+            n = std::stoi(temp[0]);
+            m = std::stoi(temp[1]) * 2;
 
-            n = std::stoi(header.substr(0, space_pos1));
-            m = std::stoi(header.substr(space_pos1 + 1, space_pos2 - space_pos1 - 1)) * 2;
-
-            std::string fmt = (space_pos2 != std::string::npos) ? header.substr(space_pos2 + 1) : "000";
+            std::string fmt = temp.size() >= 2 ? temp[3] : "000";
             has_v_weights   = fmt[1] == '1';
             has_e_weights   = fmt[2] == '1';
 
