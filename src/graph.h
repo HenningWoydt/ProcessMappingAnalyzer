@@ -49,137 +49,73 @@ namespace ProMapAnalyzer {
 
     public:
         explicit Graph(const std::string& path) {
-            std::ifstream file(path, std::ios::ate); // Open file in "at end" mode to get size
-            size_t file_size = file.tellg(); // Get file size
-            file.seekg(0); // Rewind to the beginning
-
-            std::string content(file_size, '\0');
-            file.read(&content[0], file_size);
-
-            const char* ptr = content.data();
-            const char* end = ptr + content.size();
-
-            bool has_v_weights = false;
-            bool has_e_weights = false;
-
-            // Parse header
-            while (*ptr == '%') {
-                ptr = std::find(ptr, end, '\n') + 1; // Skip comment lines
+            if (!file_exists(path)) {
+                std::cerr << "File " << path << " does not exist!" << std::endl;
+                std::abort();
             }
 
-            // Parse and clean the first non-comment line
-            while (*ptr == ' ') ++ptr; // Skip leading spaces
-            const char* line_end = std::find(ptr, end, '\n'); // Find the end of the line
+            std::ifstream file(path);
+            if (file.is_open()) {
+                std::string line;
+                bool has_v_weights = false;
+                bool has_e_weights = false;
 
-            // Parse the header
-            std::string header(ptr, line_end);
-            std::vector<std::string> temp = split(header, ' ');
-            ptr = line_end + 1; // Move pointer past the header line
+                while (std::getline(file, line)) {
+                    if (line[0] == '%') { continue; }
 
-            n = std::stoi(temp[0]);
-            m = std::stoi(temp[1]) * 2;
+                    // remove leading and trailing whitespaces, replace double whitespaces
+                    line.erase(0, line.find_first_not_of(' ')).erase(line.find_last_not_of(' ') + 1);
+                    line = std::regex_replace(line, std::regex("\\s{2,}"), " ");
 
-            std::string fmt = temp.size() >= 2 ? temp[3] : "000";
-            has_v_weights   = fmt[1] == '1';
-            has_e_weights   = fmt[2] == '1';
+                    // read in header
+                    std::vector<std::string> header = split(line, ' ');
+                    n                               = std::stoll(header[0]);
+                    m                               = std::stoll(header[1]) * 2;
 
-            v_weights.resize(n, 1);
-            vertex_weights = n;
-            neighborhoods.resize(n + 1, 0);
-            neighborhoods[0] = 0;
-            edges.resize(m);
-            curr_m = 0;
+                    neighborhoods.resize(n + 1);
+                    v_weights.resize(n, 1);
+                    vertex_weights = n;
+                    edges.reserve(m);
+                    edge_weights = 0;
 
-            // Parse edges
-            u64 u = 0;
-            while (ptr < end) {
-                while (*ptr == '%') {
-                    ptr = std::find(ptr, end, '\n') + 1; // Skip comment lines
+                    std::string fmt = "000";
+                    if (header.size() == 3 && header[2].size() == 3) {
+                        fmt = header[2];
+                    }
+
+                    has_v_weights = fmt[1] == '1';
+                    has_e_weights = fmt[2] == '1';
+
+                    break;
                 }
 
-                const char* line_start = ptr;
-                line_end               = std::find(ptr, end, '\n');
-                ptr                    = line_end + 1;
+                // read in edges
+                std::vector<u64> ints;
+                u64 u = 0;
+                neighborhoods[0] = 0;
+                while (std::getline(file, line)) {
+                    if (line[0] == '%') { continue; }
 
-                u64 curr_number = 0;
-                u64 v           = 0;
-                bool active     = false;
-                bool vertex_set = false;
+                    line_to_ints(line, ints);
+                    size_t i = 0;
 
-                const char* it = line_start;
-                if (has_v_weights) {
-                    for (; it < line_end; ++it) {
-                        char c = *it;
-                        if (c == ' ' && active) {
-                            v_weights[u] = curr_number;
-                            vertex_weights += curr_number - 1;
-                            curr_number = 0;
-                            active      = false;
-                            ++it;
-                            break;
-                        }
-                        curr_number = curr_number * 10 + (c - '0');
-                        active      = true;
+                    if (has_v_weights) {
+                        v_weights[u] = ints[i++];
+                        vertex_weights -= 1;
+                        vertex_weights += v_weights[u];
                     }
+
+                    while (i < ints.size()) {
+                        u64 v      = ints[i++] - 1;
+                        u64 weight = has_e_weights ? ints[i++] : 1;
+                        edges.emplace_back(v, weight);
+                        edge_weights += weight;
+                    }
+                    neighborhoods[u + 1] = edges.size();
+                    u += 1;
                 }
-
-                if (has_e_weights) {
-                    for (; it < line_end; ++it) {
-                        char c = *it;
-                        if (c == ' ') {
-                            if (active) {
-                                if (!vertex_set) {
-                                    v          = curr_number - 1;
-                                    vertex_set = true;
-                                } else {
-                                    edges[curr_m].v        = v;
-                                    edges[curr_m++].weight = curr_number;
-                                    edge_weights += curr_number;
-                                }
-                            }
-                            curr_number = 0;
-                            active      = false;
-                        } else {
-                            curr_number = curr_number * 10 + (c - '0');
-                            active      = true;
-                        }
-                    }
-                } else {
-                    for (; it < line_end; ++it) {
-                        char c = *it;
-                        if (c == ' ') {
-                            if (active) {
-                                edges[curr_m].v        = curr_number - 1;
-                                edges[curr_m++].weight = 1;
-                                edge_weights += 1;
-                            }
-                            curr_number = 0;
-                            active      = false;
-                        } else {
-                            curr_number = curr_number * 10 + (c - '0');
-                            active      = true;
-                        }
-                    }
-                }
-
-                // Handle the last number on the line
-                if (active) {
-                    if (!has_e_weights) {
-                        edges[curr_m].v        = curr_number - 1;
-                        edges[curr_m++].weight = 1;
-                        edge_weights += 1;
-                    } else {
-                        edges[curr_m].v        = v;
-                        edges[curr_m++].weight = curr_number;
-                        edge_weights += curr_number;
-                    }
-                }
-
-                neighborhoods[u + 1] = curr_m;
-                u += 1;
+                edge_weights /= 2;
             }
-
-            edge_weights /= 2;
         }
 
         u64 get_n() const { return n; }
