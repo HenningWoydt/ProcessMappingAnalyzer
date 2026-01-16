@@ -18,123 +18,120 @@
 #define PROCESSMAPPINGANALYZER_UTIL_H
 
 #include <algorithm>
+#include <cmath>
 #include <fstream>
-#include <iomanip>
 #include <iostream>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <vector>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdexcept>
+#include <cctype>
+#include <charconv>
+#include <cstdint>
+#include <cstring>
+#include <iomanip>
 
 namespace ProMapAnalyzer {
-    void line_to_ints(const std::string& line,
-                      std::vector<u64>& ints);
-
-    bool file_exists(const std::string& path);
-
-    template <typename T1, typename T2>
-    T1 sum(const std::vector<T2>& vec) {
+    template<typename T1, typename T2>
+    inline T1 sum(const std::vector<T2> &vec) {
         T1 s = static_cast<T1>(0);
 
-        for (auto& x : vec) {
+        for (auto &x: vec) {
             s += static_cast<T1>(x);
         }
 
         return s;
     }
 
-    template <typename T>
-    T max(const std::vector<T>& vec) {
+    template<typename T>
+    inline T max(const std::vector<T> &vec) {
         T m = vec[0];
 
-        for (auto& x : vec) {
+        for (auto &x: vec) {
             m = std::max(m, x);
         }
 
         return m;
     }
 
-    template <typename T>
-    T min(const std::vector<T>& vec) {
+    template<typename T>
+    inline T min(const std::vector<T> &vec) {
         T m = vec[0];
 
-        for (auto& x : vec) {
+        for (auto &x: vec) {
             m = std::min(m, x);
         }
 
         return m;
     }
 
-    template <typename T1, typename T2>
-    T1 prod(const std::vector<T2>& vec) {
+    template<typename T1, typename T2>
+    inline T1 prod(const std::vector<T2> &vec) {
         T1 p = static_cast<T1>(1);
 
-        for (auto& x : vec) {
+        for (auto &x: vec) {
             p *= static_cast<T1>(x);
         }
 
         return p;
     }
 
-    template <typename T>
-    T convert_to(const std::string& str) {
+    template<typename T>
+    inline T convert_to(const std::string &str) {
         T result;
         std::istringstream iss(str);
         iss >> result;
         return result;
     }
 
-    template <typename T>
-    std::vector<T> convert(const std::vector<std::string>& vec) {
+    template<typename T>
+    inline std::vector<T> convert(const std::vector<std::string> &vec) {
         std::vector<T> v;
 
-        for (auto& s : vec) {
+        for (auto &s: vec) {
             v.push_back(convert_to<T>(s));
         }
 
         return v;
     }
 
-    template <typename T>
-    std::vector<T> convert(const std::vector<std::string>&& vec) {
+    template<typename T>
+    inline std::vector<T> convert(const std::vector<std::string> &&vec) {
         std::vector<T> v;
 
-        for (auto& s : vec) {
+        for (auto &s: vec) {
             v.push_back(convert_to<T>(s));
         }
 
         return v;
     }
 
-    std::vector<std::string> split(const std::string& str,
-                                   char c);
-
-    std::vector<u64> read_partition(const std::string& path, size_t n);
-
-    template <typename T>
-    void printVectorOfVectors(const std::vector<std::vector<T>>& vecs) {
+    template<typename T>
+    inline void printVectorOfVectors(const std::vector<std::vector<T> > &vecs) {
         // Determine the maximum length of vectors for spacing
         size_t maxLen = 0;
-        for (const auto& vec : vecs) {
+        for (const auto &vec: vecs) {
             if (vec.size() > maxLen) {
                 maxLen = vec.size();
             }
         }
 
         // Print each vector
-        for (const auto& vec : vecs) {
-            for (const auto& elem : vec) {
+        for (const auto &vec: vecs) {
+            for (const auto &elem: vec) {
                 std::cout << std::setw(3) << elem << " "; // Adjust the spacing as needed
             }
             std::cout << std::endl;
         }
     }
 
-    void generate_communication_graph(std::string& hierarchy,
-                                      std::string& distance,
-                                      std::string& file_path);
-
-    template <typename T>
-    std::string vectorToString(const std::vector<T>& vec) {
+    template<typename T>
+    inline std::string vectorToString(const std::vector<T> &vec) {
         std::ostringstream oss;
         oss << "[";
         for (size_t i = 0; i < vec.size(); ++i) {
@@ -145,6 +142,234 @@ namespace ProMapAnalyzer {
         }
         oss << "]";
         return oss.str();
+    }
+
+    inline void line_to_ints(const std::string &line,
+                             std::vector<u64> &ints) {
+        ints.clear();
+        u64 curr_number = 0;
+        bool active = false;
+
+        for (const char c: line) {
+            if (c == ' ') {
+                if (active) {
+                    ints.push_back(curr_number);
+                }
+                curr_number = 0;
+                active = false;
+            } else {
+                curr_number = curr_number * 10 + (c - '0');
+                active = true;
+            }
+        }
+
+        if (active) {
+            ints.push_back(curr_number);
+        }
+    }
+
+    inline bool file_exists(const std::string &path) {
+        const std::ifstream f(path.c_str());
+        return f.good();
+    }
+
+    inline std::vector<std::string> split(const std::string &str,
+                                          const char c) {
+        std::vector<std::string> splits;
+
+        std::istringstream iss(str);
+        std::string token;
+
+        while (std::getline(iss, token, c)) {
+            if (!token.empty()) {
+                splits.push_back(token);
+            }
+        }
+
+        return splits;
+    }
+
+    inline std::vector<u64> read_partition(const std::string &path, const size_t n) {
+        if (!file_exists(path)) {
+            std::cerr << "File " << path << " does not exist!" << std::endl;
+            std::abort();
+        }
+
+        // Reserve space for the partition
+        std::vector<u64> partition;
+        partition.reserve(n);
+
+        // Open the file and read its contents into a string
+        std::ifstream file(path, std::ios::ate); // open in "at end" mode to get file size
+        size_t file_size = file.tellg();         // get file size
+        file.seekg(0);                           // rewind to the beginning
+
+        std::string content(file_size, '\0');
+        file.read(&content[0], file_size);
+
+        // Parse the content
+        const char *ptr = content.data();
+        const char *end = ptr + content.size();
+
+        while (ptr < end) {
+            // Skip lines starting with 'c'
+            if (*ptr == 'c') {
+                ptr = std::find(ptr, end, '\n') + 1;
+                continue;
+            }
+
+            // Parse the number
+            u64 value = 0;
+            ptr = std::from_chars(ptr, end, value).ptr;
+
+            // Add to the partition
+            partition.push_back(value);
+
+            // Move the pointer to the next line
+            ptr = std::find(ptr, end, '\n') + 1;
+        }
+
+        return partition;
+    }
+
+    inline void generate_communication_graph(std::string &hierarchy,
+                                             std::string &distance,
+                                             std::string &file_path) {
+        std::vector<std::string> h_str = split(hierarchy, ':');
+        std::vector<long int> h = convert<long int>(h_str);
+        std::reverse(h.begin(), h.end());
+        std::vector<std::string> d_str = split(distance, ':');
+        std::vector<long int> d = convert<long int>(d_str);
+
+        std::vector<std::vector<long int> > hierarchy_indices;
+        for (long int x: h) {
+            hierarchy_indices.emplace_back();
+            hierarchy_indices.reserve(x);
+            for (long int i = 0; i < x; ++i) {
+                hierarchy_indices.back().push_back(i);
+            }
+        }
+
+        std::vector<std::vector<long int> > vertex_identifier;
+
+        // Vector to store the current indices for each vector
+        std::vector<size_t> indices(hierarchy_indices.size(), 0);
+
+        while (true) {
+            // Find the rightmost vector that has more elements left after the current element
+            vertex_identifier.emplace_back();
+            for (size_t i = 0; i < hierarchy_indices.size(); ++i) {
+                vertex_identifier.back().push_back(hierarchy_indices[i][indices[i]]);
+            }
+
+            int i = static_cast<int>(hierarchy_indices.size()) - 1;
+            for (; i >= 0; --i) {
+                if (indices[i] + 1 < hierarchy_indices[i].size()) {
+                    indices[i]++;
+                    break;
+                }
+                indices[i] = 0; // Reset the index and carry the increment to the next vector
+            }
+
+            // If no such vector is found, we're done
+            if (i < 0) {
+                break;
+            }
+        }
+
+        auto k = prod<long int>(h);
+        std::vector<long int> dist_mtx(k * k);
+        std::fill(dist_mtx.begin(), dist_mtx.end(), static_cast<long int>(0));
+
+        for (long int i = 0; i < k; ++i) {
+            for (long int j = 0; j < k; ++j) {
+                if (i == j) {
+                    dist_mtx[i * k + j] = 0;
+                } else {
+                    std::vector<long int> &ident1 = vertex_identifier[i];
+                    std::vector<long int> &ident2 = vertex_identifier[j];
+
+                    for (long int l = 0; l < static_cast<int>(h.size()); ++l) {
+                        if (ident1[l] != ident2[l]) {
+                            dist_mtx[i * k + j] = d[h.size() - 1 - l];
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // write graph
+        long int n_edges = 0;
+        std::string fmt = "001";
+        std::string content;
+        for (long int i = 0; i < k; ++i) {
+            std::string line;
+            for (long int j = i + 1; j < k; ++j) {
+                line += "" + std::to_string(j + 1) + " " + std::to_string(dist_mtx[i * k + j]) + " ";
+                n_edges++;
+            }
+            if (!line.empty()) {
+                line.pop_back();
+            }
+            content.append(line + "\n");
+        }
+        content = "" + std::to_string(k) + " " + std::to_string(n_edges) + " " + fmt + "\n" + content;
+
+        std::ofstream out_file;
+        out_file.open(file_path);
+        out_file << content;
+        out_file.close();
+    }
+
+    // Suggested shape of your helper
+    struct MMap {
+        char *data = nullptr;
+        size_t size = 0;
+        int fd = -1; // keep fd so you can close it later
+    };
+
+    inline MMap mmap_file_ro(const std::string &path) {
+        MMap mm;
+
+        int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+        if (fd < 0) {
+            perror("open");
+            std::exit(EXIT_FAILURE);
+        }
+
+        struct stat st{};
+        if (fstat(fd, &st) != 0) {
+            perror("fstat");
+            std::exit(EXIT_FAILURE);
+        }
+        size_t size = static_cast<size_t>(st.st_size);
+
+        #ifdef __linux__
+        // 1) Tell the kernel we’ll read sequentially (before mmap)
+        (void) posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+        #endif
+
+        void *addr = ::mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
+        if (addr == MAP_FAILED) {
+            perror("mmap");
+            std::exit(EXIT_FAILURE);
+        }
+
+        #ifdef __linux__
+        // 2) Hint that we’ll need these pages, sequentially (right after mmap)
+        (void) madvise(addr, size, MADV_SEQUENTIAL | MADV_WILLNEED);
+        #endif
+
+        mm.data = static_cast<char *>(addr);
+        mm.size = size;
+        mm.fd = fd; // store; close in your munmap_file(...)
+        return mm;
+    }
+
+    inline void munmap_file(const MMap &mm) {
+        if (mm.data && mm.size) ::munmap(mm.data, mm.size);
+        if (mm.fd >= 0) ::close(mm.fd);
     }
 }
 
