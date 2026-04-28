@@ -23,6 +23,4 @@ cmake-build-release
 cmake-build-relwithdebinfo
 cmake-build-minsizerel
 
-extern/IntegratedProcessMapping/*
-
-tmp/*
+data

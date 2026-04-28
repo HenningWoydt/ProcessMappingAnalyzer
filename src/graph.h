@@ -78,26 +78,29 @@ namespace ProMapAnalyzer {
             m *= 2;
 
             // search end of line or fmt
-            std::string fmt = "000";
             bool has_v_weights = false;
             bool has_e_weights = false;
             while (*p == ' ') { ++p; }
             if (*p != '\n') {
-                // found fmt
-                fmt[0] = *p;
-                ++p;
-                if (*p != '\n') {
-                    // found fmt
-                    fmt[1] = *p;
+                // read fmt word
+                std::string fmt_word;
+                while (*p != ' ' && *p != '\n') {
+                    fmt_word += *p;
                     ++p;
-                    if (*p != '\n') {
-                        // found fmt
-                        fmt[2] = *p;
-                        ++p;
-                    }
                 }
-                // skip whitespaces
-                while (*p == ' ') { ++p; }
+                
+                if (fmt_word.length() == 1) {
+                    has_e_weights = fmt_word[0] == '1';
+                } else if (fmt_word.length() == 2) {
+                    has_v_weights = fmt_word[0] == '1';
+                    has_e_weights = fmt_word[1] == '1';
+                } else if (fmt_word.length() >= 3) {
+                    has_v_weights = fmt_word[1] == '1';
+                    has_e_weights = fmt_word[2] == '1';
+                }
+
+                // skip the rest of the header line (e.g. ncon)
+                while (*p != '\n') { ++p; }
             }
             vertex_weights = 0;
             v_weights.resize(n);
@@ -105,8 +108,6 @@ namespace ProMapAnalyzer {
             neighborhoods[0] = 0;
             edges_v.resize(m);
             edges_w.resize(m);
-            has_v_weights = fmt[1] == '1';
-            has_e_weights = fmt[2] == '1';
 
             ++p;
             vertex_t u = 0;

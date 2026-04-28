@@ -130,7 +130,7 @@ int main(int argc, char *argv[]) {
     ss << "\t\"L_max\": " << ceil((1 + epsilon) * (static_cast<double>(g.vertex_weights) / static_cast<double>(k))) << ", \n";
     ss << "\t\"partition_balance\": " << vectorToString(partition_balance) << " ,\n";
     ss << "\t\"partition_weights\": " << vectorToString(partition_weights) << ", \n";
-    ss << "\t\"is_balanced_on_epsilon\": " << (max(partition_balance) <= 1.03) << ", \n";
+    ss << "\t\"is_balanced_on_epsilon\": " << (max(partition_balance) <= 1 + epsilon) << ", \n";
     ss << "\t\"is_balanced_on_L_max\": " << (static_cast<double>(max(partition_weights)) <= ceil((1 + epsilon) * (static_cast<double>(g.vertex_weights) / static_cast<double>(k)))) << ", \n";
     ss << "\t\"io_in\": " << duration_io << ", \n";
     ss << "\t\"processed_in\": " << duration_process << "\n";

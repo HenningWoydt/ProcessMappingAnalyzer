@@ -201,6 +201,10 @@ namespace ProMapAnalyzer {
 
         // Open the file and read its contents into a string
         std::ifstream file(path, std::ios::ate); // open in "at end" mode to get file size
+        if (!file.is_open()) {
+            std::cerr << "Could not open file " << path << std::endl;
+            std::abort();
+        }
         size_t file_size = file.tellg();         // get file size
         file.seekg(0);                           // rewind to the beginning
 
@@ -211,22 +215,31 @@ namespace ProMapAnalyzer {
         const char *ptr = content.data();
         const char *end = ptr + content.size();
 
-        while (ptr < end) {
+        while (ptr < end && partition.size() < n) {
+            // Skip whitespaces and newlines
+            while (ptr < end && std::isspace(static_cast<unsigned char>(*ptr))) {
+                ++ptr;
+            }
+
+            if (ptr >= end) break;
+
             // Skip lines starting with 'c'
             if (*ptr == 'c') {
-                ptr = std::find(ptr, end, '\n') + 1;
+                while (ptr < end && *ptr != '\n') ++ptr;
                 continue;
             }
 
             // Parse the number
             u64 value = 0;
-            ptr = std::from_chars(ptr, end, value).ptr;
-
-            // Add to the partition
-            partition.push_back(value);
-
-            // Move the pointer to the next line
-            ptr = std::find(ptr, end, '\n') + 1;
+            auto [next_ptr, ec] = std::from_chars(ptr, end, value);
+            
+            if (ec == std::errc{}) {
+                partition.push_back(value);
+                ptr = next_ptr;
+            } else {
+                // if parsing failed, skip to next line
+                while (ptr < end && *ptr != '\n') ++ptr;
+            }
         }
 
         return partition;
