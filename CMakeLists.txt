@@ -26,7 +26,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Compiler Flags
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -march=native -Wall -Wextra -pedantic")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -march=native -Wall -Wextra -pedantic -fopenmp")
 set(CMAKE_CXX_FLAGS_DEBUG "-g3 -O0 -Wall -Wextra -pedantic")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO  "-O3 -g3 -DNDEBUG -march=native -Wall -Wextra -pedantic")
 

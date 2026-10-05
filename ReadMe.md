@@ -23,7 +23,7 @@ Use `build.sh` to build the project, the binary `processmappinganalyzer` will be
 
 Use
 ``
-./processmappinganalyzer [graph_path] [partition_path] [hierachy] [distance] [epsilon] [out_path]
+./processmappinganalyzer [graph_path] [partition_path] [hierachy] [distance] [epsilon] [out_path] [threads]
 ``
 to start the tool.
 - `[graph_path]` should be the path to a graph in Metis format
@@ -32,6 +32,7 @@ to start the tool.
 - `[distance]` in the format $d_1:d_2:\ldots:d_\ell$ (no whitespace)
 - `[epsilon]` as a double, for example `0.03` for an imbalance of $3\%$
 - `[out_path]` should be the file that stores the statistics. The format will be JSON.
+- `[threads]` (optional) number of threads to use for processing (default: 1)
 
 ## Bugs, Questions, Comments and Ideas
 

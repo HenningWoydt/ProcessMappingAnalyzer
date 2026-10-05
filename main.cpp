@@ -21,6 +21,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <omp.h>
 
 #include "src/definitions.h"
 #include "src/graph.h"
@@ -42,33 +43,40 @@ int main(int argc, char *argv[]) {
     std::string distance_str = "1:10:100";
     f64 epsilon = 0.03;
     std::string out_path = "out.JSON";
+    int threads = 1;
 
-    if (argc == 7) {
+    if (argc == 7 || argc == 8) {
         graph_path = args[1];
         partition_path = args[2];
         hierarchy_str = args[3];
         distance_str = args[4];
         epsilon = std::stod(args[5]);
         out_path = args[6];
+        if (argc == 8) {
+            threads = std::stoi(args[7]);
+        }
     } else {
         std::cerr
                 << "Error: invalid number of arguments (" << argc - 1 << " given).\n\n"
                 << "Usage:\n"
                 << "  " << args[0]
-                << " <graph> <partition> <hierarchy> <distances> <epsilon> <output>\n\n"
+                << " <graph> <partition> <hierarchy> <distances> <epsilon> <output> [threads]\n\n"
                 << "Arguments:\n"
                 << "  <graph>       Path to input graph file (METIS format)\n"
                 << "  <partition>   Path to partition file\n"
                 << "  <hierarchy>   Colon-separated hierarchy levels (e.g. 4:8:6)\n"
                 << "  <distances>   Colon-separated distance thresholds (e.g. 1:10:100)\n"
                 << "  <epsilon>     Approximation parameter (e.g. 0.03)\n"
-                << "  <output>      Output JSON file\n\n"
+                << "  <output>      Output JSON file\n"
+                << "  [threads]     Number of threads (default: 1)\n\n"
                 << "Example:\n"
                 << "  " << args[0]
-                << " graph.graph part.txt 4:8:6 1:10:100 0.03 out.json\n";
+                << " graph.graph part.txt 4:8:6 1:10:100 0.03 out.json 4\n";
 
         std::exit(EXIT_FAILURE);
     }
+
+    omp_set_num_threads(threads);
 
     Graph g(graph_path);
     std::vector<u64> partition = read_partition(partition_path, g.n);
