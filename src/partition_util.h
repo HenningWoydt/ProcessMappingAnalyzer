@@ -200,6 +200,110 @@ namespace ProMapAnalyzer {
         }
     }
 
+    struct LinkStats {
+        u64 num_links = 0;
+        u64 min_v = 0, min_a = 0, min_b = 0, min_layer = 0;
+        u64 max_v = 0, max_a = 0, max_b = 0, max_layer = 0;
+        f64 avg = 0.0;
+        f64 var = 0.0;
+    };
+
+    // Link model: on level i (0-based) the a_i siblings below one parent form a clique.
+    // A link connects two sibling groups (level 0: two PEs, level 1: two processors, ...).
+    // An edge (u,v) is routed over the single link at the lowest level where the PEs differ.
+    // Each link accumulates the edge weights (messages) crossing it; every undirected edge counts once.
+    // Pairs are reported as global group ids on that level (level 0 = PE ids).
+    inline void determine_link_stats(const Graph &g,
+                                     const std::vector<u64> &partition,
+                                     const std::vector<u64> &hierarchy,
+                                     std::vector<LinkStats> &layer_stats,
+                                     LinkStats &overall) {
+        const size_t l = hierarchy.size();
+
+        std::vector<u64> P(l + 1, 1); // P[i] = a_0 * ... * a_{i-1}
+        for (size_t i = 0; i < l; ++i) P[i + 1] = P[i] * hierarchy[i];
+        const u64 k = P[l];
+
+        std::vector<std::vector<u64> > cnt(l);
+        for (size_t i = 0; i < l; ++i) {
+            cnt[i].assign((k / P[i + 1]) * hierarchy[i] * hierarchy[i], 0);
+        }
+
+        #pragma omp parallel for schedule(dynamic, 4096)
+        for (u64 u = 0; u < g.n; ++u) {
+            const u64 pu = partition[u];
+            for (size_t idx = g.neighborhoods[u]; idx < g.neighborhoods[u + 1]; ++idx) {
+                const u64 v = g.edges_v[idx];
+                if (v <= u) continue; // count each undirected edge once
+                const u64 pv = partition[v];
+                if (pu == pv) continue;
+
+                size_t i = 0;
+                while (i + 1 < l && pu / P[i + 1] != pv / P[i + 1]) ++i;
+
+                const u64 a = hierarchy[i];
+                u64 c1 = (pu / P[i]) % a;
+                u64 c2 = (pv / P[i]) % a;
+                if (c1 > c2) std::swap(c1, c2);
+                const u64 parent = pu / P[i + 1];
+                const u64 w = static_cast<u64>(g.edges_w[idx]);
+
+                #pragma omp atomic
+                cnt[i][parent * a * a + c1 * a + c2] += w;
+            }
+        }
+
+        auto visit = [&](size_t i, auto &&f) {
+            const u64 a = hierarchy[i];
+            const u64 parents = k / P[i + 1];
+            for (u64 p = 0; p < parents; ++p) {
+                for (u64 c1 = 0; c1 < a; ++c1) {
+                    for (u64 c2 = c1 + 1; c2 < a; ++c2) {
+                        f(p * a + c1, p * a + c2, cnt[i][p * a * a + c1 * a + c2]);
+                    }
+                }
+            }
+        };
+
+        layer_stats.assign(l, LinkStats());
+        overall = LinkStats();
+        u64 overall_sum = 0;
+
+        for (size_t i = 0; i < l; ++i) {
+            LinkStats &s = layer_stats[i];
+            u64 sum_v = 0;
+            visit(i, [&](u64 a, u64 b, u64 val) {
+                if (s.num_links == 0 || val < s.min_v) { s.min_v = val; s.min_a = a; s.min_b = b; s.min_layer = i; }
+                if (s.num_links == 0 || val > s.max_v) { s.max_v = val; s.max_a = a; s.max_b = b; s.max_layer = i; }
+                if (overall.num_links == 0 || val < overall.min_v) { overall.min_v = val; overall.min_a = a; overall.min_b = b; overall.min_layer = i; }
+                if (overall.num_links == 0 || val > overall.max_v) { overall.max_v = val; overall.max_a = a; overall.max_b = b; overall.max_layer = i; }
+                ++s.num_links;
+                ++overall.num_links;
+                sum_v += val;
+            });
+            overall_sum += sum_v;
+            if (s.num_links > 0) {
+                s.avg = static_cast<f64>(sum_v) / static_cast<f64>(s.num_links);
+                visit(i, [&](u64, u64, u64 val) {
+                    const f64 d = static_cast<f64>(val) - s.avg;
+                    s.var += d * d;
+                });
+                s.var /= static_cast<f64>(s.num_links);
+            }
+        }
+
+        if (overall.num_links > 0) {
+            overall.avg = static_cast<f64>(overall_sum) / static_cast<f64>(overall.num_links);
+            for (size_t i = 0; i < l; ++i) {
+                visit(i, [&](u64, u64, u64 val) {
+                    const f64 d = static_cast<f64>(val) - overall.avg;
+                    overall.var += d * d;
+                });
+            }
+            overall.var /= static_cast<f64>(overall.num_links);
+        }
+    }
+
     inline std::vector<u64> determine_partition_weights(const Graph &g,
                                                         const std::vector<u64> &partition,
                                                         const u64 k) {

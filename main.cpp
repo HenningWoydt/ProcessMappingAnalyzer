@@ -14,6 +14,7 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 ==============================================================================*/
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <fstream>
@@ -115,6 +116,10 @@ int main(int argc, char *argv[]) {
     std::vector<u64> edge_cut_layer, weighted_edge_cut_layer, comm_cost_layer;
     determine_all_stats(g, partition, hierarchy, distance, k, edge_cut, weighted_edge_cut, comm_cost, edge_cut_layer, weighted_edge_cut_layer, comm_cost_layer);
 
+    std::vector<LinkStats> link_layer;
+    LinkStats link_all;
+    determine_link_stats(g, partition, hierarchy, link_layer, link_all);
+
     auto ep_process = std::chrono::system_clock::now();
     f64 duration_io = (f64) std::chrono::duration_cast<std::chrono::nanoseconds>(ep_io - sp_io).count() / 1e9;
     f64 duration_process = (f64) std::chrono::duration_cast<std::chrono::nanoseconds>(ep_process - sp_process).count() / 1e9;
@@ -132,9 +137,42 @@ int main(int argc, char *argv[]) {
     ss << "\t\"weighted_edge_cut_per_layer\": " << vectorToString(weighted_edge_cut_layer) << " ,\n";
     ss << "\t\"comm_cost\": " << comm_cost << " ,\n";
     ss << "\t\"comm_cost_per_layer\": " << vectorToString(comm_cost_layer) << " ,\n";
+    const u64 max_balance_pe = std::max_element(partition_balance.begin(), partition_balance.end()) - partition_balance.begin();
+    const u64 min_balance_pe = std::min_element(partition_balance.begin(), partition_balance.end()) - partition_balance.begin();
+    const f64 avg_balance = sum<double>(partition_balance) / static_cast<double>(k);
+    f64 var_balance = 0.0;
+    for (const f64 b: partition_balance) {
+        var_balance += (b - avg_balance) * (b - avg_balance);
+    }
+    var_balance /= static_cast<f64>(k);
+
+    auto link_json = [](const LinkStats &s) {
+        std::ostringstream o;
+        o << "{\"num_links\": " << s.num_links
+          << ", \"min_link\": " << s.min_v << ", \"min_pair_link\": [" << s.min_a << ", " << s.min_b << "]"
+          << ", \"min_layer_link\": " << s.min_layer
+          << ", \"max_link\": " << s.max_v << ", \"max_pair_link\": [" << s.max_a << ", " << s.max_b << "]"
+          << ", \"max_layer_link\": " << s.max_layer
+          << ", \"avg_link\": " << s.avg << ", \"var_link\": " << s.var
+          << ", \"std_link\": " << std::sqrt(s.var)
+          << ", \"cv_link\": " << (s.avg > 0 ? std::sqrt(s.var) / s.avg : 0.0) << "}";
+        return o.str();
+    };
+    ss << "\t\"link_messages\": " << link_json(link_all) << " ,\n";
+    ss << "\t\"link_messages_per_layer\": [";
+    for (size_t i = 0; i < link_layer.size(); ++i) {
+        ss << (i ? ", " : "") << link_json(link_layer[i]);
+    }
+    ss << "] ,\n";
+
     ss << "\t\"max_balance\": " << max(partition_balance) << " ,\n";
-    ss << "\t\"avg_balance\": " << sum<double>(partition_balance) / static_cast<double>(k) << " ,\n";
+    ss << "\t\"max_balance_pe\": " << max_balance_pe << " ,\n";
+    ss << "\t\"avg_balance\": " << avg_balance << " ,\n";
+    ss << "\t\"var_balance\": " << var_balance << " ,\n";
+    ss << "\t\"std_balance\": " << std::sqrt(var_balance) << " ,\n";
+    ss << "\t\"cv_balance\": " << (avg_balance > 0 ? std::sqrt(var_balance) / avg_balance : 0.0) << " ,\n";
     ss << "\t\"min_balance\": " << min(partition_balance) << " ,\n";
+    ss << "\t\"min_balance_pe\": " << min_balance_pe << " ,\n";
     ss << "\t\"L_max\": " << ceil((1 + epsilon) * (static_cast<double>(g.vertex_weights) / static_cast<double>(k))) << ", \n";
     ss << "\t\"partition_balance\": " << vectorToString(partition_balance) << " ,\n";
     ss << "\t\"partition_weights\": " << vectorToString(partition_weights) << ", \n";
